@@ -27,7 +27,7 @@ var (
 	workerId         = flag.Uint64("worker-id", 0, "worker id")
 	datacenterId     = flag.Uint64("datacenter-id", 0, "data center id")
 	sequence         = flag.Uint64("seq", 0, "sequence")
-	etcdEndpoints    = flag.String("etcd", "http://127.0.0.1:2379", "etcd emdpoints")
+	etcdEndpoints    = flag.String("etcd", "http://127.0.0.1:2379", "etcd endpoints")
 	workerIdPath     = flag.String("path", "/snowflake-servers", "worker id path")
 	skipSanityChecks = flag.Bool("skip-check", false, "skip sanity checks")
 	//startupSleepMs   = flag.Int64("sleep", 10000, "startup sleep milliseconds")
