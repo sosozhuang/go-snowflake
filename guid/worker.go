@@ -1,4 +1,4 @@
-package main
+package guid
 
 import (
 	"fmt"
@@ -7,6 +7,7 @@ import (
 	"sync"
 	"golang.org/x/net/context"
 	//pb "github.com/sosozhuang/guid/proto"
+	"errors"
 )
 
 const (
@@ -88,7 +89,7 @@ func NewIdWorker(workerId, datacenterId, sequence uint64) (*idWorker, error) {
 
 
 
-func (iw *idWorker) GetIdWorker(context.Context, *EmptyRequest) (*IdWorkerReply, error) {
+func (iw *idWorker) GetIdWorker(ctx context.Context, req *Request) (*IdWorkerReply, error) {
 	return &IdWorkerReply{
 		WorkerId:     iw.workerId,
 		DatacenterId: iw.datacenterId,
@@ -96,7 +97,18 @@ func (iw *idWorker) GetIdWorker(context.Context, *EmptyRequest) (*IdWorkerReply,
 	}, nil
 }
 
-func (iw *idWorker) GetId(context.Context, *EmptyRequest) (*IdReply, error) {
-	id, err := iw.NextId()
-	return &IdReply{id}, err
+func (iw *idWorker) GetId(ctx context.Context, req *Request) (*IdReply, error) {
+	if req.Number <= 0 {
+		return nil, errors.New("request number must greater than zero")
+	}
+	ids := make([]uint64, 0)
+	for i := uint32(0); i < req.Number; i++ {
+		id, err := iw.NextId()
+		if err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+
+	return &IdReply{ids}, nil
 }

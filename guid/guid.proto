@@ -4,15 +4,15 @@ option java_multiple_files = true;
 option java_package = "com.github.sosozhuang.guid";
 option java_outer_classname = "GuidProto";
 
-package main;
+package guid;
 
 service Worker {
-  rpc GetIdWorker(EmptyRequest) returns (IdWorkerReply) {}
-  rpc GetId(EmptyRequest) returns(IdReply) {}
+  rpc GetIdWorker(Request) returns (IdWorkerReply) {}
+  rpc GetId(Request) returns(IdReply) {}
 }
 
-message EmptyRequest {
-
+message Request {
+  uint32 number = 1;
 }
 
 message IdWorkerReply {
@@ -22,5 +22,5 @@ message IdWorkerReply {
 }
 
 message IdReply {
-  uint64 id = 1;
+  repeated uint64 id = 1;
 }

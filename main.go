@@ -1,12 +1,12 @@
 package main
 
 import (
-	"golang.org/x/net/context"
 	"errors"
 	"flag"
 	"fmt"
 	"github.com/coreos/etcd/client"
-	//pb "github.com/sosozhuang/guid/proto"
+	"github.com/sosozhuang/guid/guid"
+	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 	"log"
@@ -14,14 +14,15 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
-	"path"
 )
 
 var (
+	serverHost       = flag.String("host", getHostname(), "server host")
 	serverPort       = flag.Int("port", 7609, "server port")
 	workerId         = flag.Uint64("worker-id", 0, "worker id")
 	datacenterId     = flag.Uint64("datacenter-id", 0, "data center id")
@@ -57,7 +58,7 @@ func main() {
 	go signalListen(*workerId, c)
 
 	//time.Sleep(time.Duration(*startupSleepMs) * time.Millisecond)
-	iw, err := NewIdWorker(*workerId, *datacenterId, *sequence)
+	iw, err := guid.NewIdWorker(*workerId, *datacenterId, *sequence)
 	if err != nil {
 		log.Println("Unexpected exception while initializing server:", err)
 		return
@@ -69,7 +70,7 @@ func main() {
 		return
 	}
 	s := grpc.NewServer()
-	RegisterWorkerServer(s, iw)
+	guid.RegisterWorkerServer(s, iw)
 	// Register reflection service on gRPC server.
 	reflection.Register(s)
 	if err := s.Serve(lis); err != nil {
@@ -114,15 +115,15 @@ func sanityCheckPeers(c client.Client) error {
 		}
 		peer := Peer{slice[0], port}
 
-		if peer.Hostname != getHostname() && peer.Port != *serverPort {
+		if peer.Hostname != *serverHost || peer.Port != *serverPort {
 			log.Printf("Connecting to %s:%d\n", peer.Hostname, peer.Port)
 			conn, err := grpc.Dial(fmt.Sprintf("%s:%d", peer.Hostname, peer.Port), grpc.WithInsecure())
 			if err != nil {
 				log.Printf("Did not connect: %v", err)
 				return err
 			}
-			c := NewWorkerClient(conn)
-			worker, err := c.GetIdWorker(context.Background(), nil)
+			c := guid.NewWorkerClient(conn)
+			worker, err := c.GetIdWorker(context.Background(), &guid.Request{})
 			if err != nil {
 				log.Fatalf("Could not get worker: %v", err)
 				return err
@@ -154,6 +155,10 @@ func sanityCheckPeers(c client.Client) error {
 		}
 	}
 	return nil
+}
+
+func timeUnixMillis() int64 {
+	return time.Now().UnixNano() / 1e6
 }
 
 func etcdClient(etcdEndpoints string) (client.Client, error) {
@@ -194,7 +199,7 @@ func registerWorkerId(workerId uint64, c client.Client) error {
 	tries := 0
 	for {
 		kapi := client.NewKeysAPI(c)
-		_, err := kapi.Create(context.Background(), fmt.Sprintf("%s/%d", *workerIdPath, workerId), fmt.Sprintf("%s:%d", getHostname(), *serverPort))
+		_, err := kapi.Create(context.Background(), fmt.Sprintf("%s/%d", *workerIdPath, workerId), fmt.Sprintf("%s:%d", *serverHost, *serverPort))
 		if err != nil {
 			if tries < 2 {
 				log.Printf("Failed to claim worker id. Gonna wait a bit and retry because the node may be from the last time I was running.")
@@ -239,7 +244,6 @@ func signalListen(workerId uint64, c client.Client) {
 	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(ch)
 	<-ch
-	log.Printf("trying to declaim workerId %d\n", workerId)
 	unRegisterWorkerId(workerId, c)
 	os.Exit(0)
 }

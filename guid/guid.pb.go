@@ -3,17 +3,17 @@
 // DO NOT EDIT!
 
 /*
-Package main is a generated protocol buffer package.
+Package guid is a generated protocol buffer package.
 
 It is generated from these files:
 	guid.proto
 
 It has these top-level messages:
-	EmptyRequest
+	Request
 	IdWorkerReply
 	IdReply
 */
-package main
+package guid
 
 import proto "github.com/golang/protobuf/proto"
 import fmt "fmt"
@@ -35,13 +35,21 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.ProtoPackageIsVersion2 // please upgrade the proto package
 
-type EmptyRequest struct {
+type Request struct {
+	Number uint32 `protobuf:"varint,1,opt,name=number" json:"number,omitempty"`
 }
 
-func (m *EmptyRequest) Reset()                    { *m = EmptyRequest{} }
-func (m *EmptyRequest) String() string            { return proto.CompactTextString(m) }
-func (*EmptyRequest) ProtoMessage()               {}
-func (*EmptyRequest) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{0} }
+func (m *Request) Reset()                    { *m = Request{} }
+func (m *Request) String() string            { return proto.CompactTextString(m) }
+func (*Request) ProtoMessage()               {}
+func (*Request) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{0} }
+
+func (m *Request) GetNumber() uint32 {
+	if m != nil {
+		return m.Number
+	}
+	return 0
+}
 
 type IdWorkerReply struct {
 	WorkerId     uint64 `protobuf:"varint,1,opt,name=workerId" json:"workerId,omitempty"`
@@ -76,7 +84,7 @@ func (m *IdWorkerReply) GetTimestamp() int64 {
 }
 
 type IdReply struct {
-	Id uint64 `protobuf:"varint,1,opt,name=id" json:"id,omitempty"`
+	Id []uint64 `protobuf:"varint,1,rep,packed,name=id" json:"id,omitempty"`
 }
 
 func (m *IdReply) Reset()                    { *m = IdReply{} }
@@ -84,17 +92,17 @@ func (m *IdReply) String() string            { return proto.CompactTextString(m)
 func (*IdReply) ProtoMessage()               {}
 func (*IdReply) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{2} }
 
-func (m *IdReply) GetId() uint64 {
+func (m *IdReply) GetId() []uint64 {
 	if m != nil {
 		return m.Id
 	}
-	return 0
+	return nil
 }
 
 func init() {
-	proto.RegisterType((*EmptyRequest)(nil), "main.EmptyRequest")
-	proto.RegisterType((*IdWorkerReply)(nil), "main.IdWorkerReply")
-	proto.RegisterType((*IdReply)(nil), "main.IdReply")
+	proto.RegisterType((*Request)(nil), "guid.Request")
+	proto.RegisterType((*IdWorkerReply)(nil), "guid.IdWorkerReply")
+	proto.RegisterType((*IdReply)(nil), "guid.IdReply")
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -108,8 +116,8 @@ const _ = grpc.SupportPackageIsVersion4
 // Client API for Worker service
 
 type WorkerClient interface {
-	GetIdWorker(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*IdWorkerReply, error)
-	GetId(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*IdReply, error)
+	GetIdWorker(ctx context.Context, in *Request, opts ...grpc.CallOption) (*IdWorkerReply, error)
+	GetId(ctx context.Context, in *Request, opts ...grpc.CallOption) (*IdReply, error)
 }
 
 type workerClient struct {
@@ -120,18 +128,18 @@ func NewWorkerClient(cc *grpc.ClientConn) WorkerClient {
 	return &workerClient{cc}
 }
 
-func (c *workerClient) GetIdWorker(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*IdWorkerReply, error) {
+func (c *workerClient) GetIdWorker(ctx context.Context, in *Request, opts ...grpc.CallOption) (*IdWorkerReply, error) {
 	out := new(IdWorkerReply)
-	err := grpc.Invoke(ctx, "/main.Worker/GetIdWorker", in, out, c.cc, opts...)
+	err := grpc.Invoke(ctx, "/guid.Worker/GetIdWorker", in, out, c.cc, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *workerClient) GetId(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*IdReply, error) {
+func (c *workerClient) GetId(ctx context.Context, in *Request, opts ...grpc.CallOption) (*IdReply, error) {
 	out := new(IdReply)
-	err := grpc.Invoke(ctx, "/main.Worker/GetId", in, out, c.cc, opts...)
+	err := grpc.Invoke(ctx, "/guid.Worker/GetId", in, out, c.cc, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -141,8 +149,8 @@ func (c *workerClient) GetId(ctx context.Context, in *EmptyRequest, opts ...grpc
 // Server API for Worker service
 
 type WorkerServer interface {
-	GetIdWorker(context.Context, *EmptyRequest) (*IdWorkerReply, error)
-	GetId(context.Context, *EmptyRequest) (*IdReply, error)
+	GetIdWorker(context.Context, *Request) (*IdWorkerReply, error)
+	GetId(context.Context, *Request) (*IdReply, error)
 }
 
 func RegisterWorkerServer(s *grpc.Server, srv WorkerServer) {
@@ -150,7 +158,7 @@ func RegisterWorkerServer(s *grpc.Server, srv WorkerServer) {
 }
 
 func _Worker_GetIdWorker_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(EmptyRequest)
+	in := new(Request)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -159,16 +167,16 @@ func _Worker_GetIdWorker_Handler(srv interface{}, ctx context.Context, dec func(
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/main.Worker/GetIdWorker",
+		FullMethod: "/guid.Worker/GetIdWorker",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(WorkerServer).GetIdWorker(ctx, req.(*EmptyRequest))
+		return srv.(WorkerServer).GetIdWorker(ctx, req.(*Request))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
 func _Worker_GetId_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(EmptyRequest)
+	in := new(Request)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -177,16 +185,16 @@ func _Worker_GetId_Handler(srv interface{}, ctx context.Context, dec func(interf
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/main.Worker/GetId",
+		FullMethod: "/guid.Worker/GetId",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(WorkerServer).GetId(ctx, req.(*EmptyRequest))
+		return srv.(WorkerServer).GetId(ctx, req.(*Request))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
 var _Worker_serviceDesc = grpc.ServiceDesc{
-	ServiceName: "main.Worker",
+	ServiceName: "guid.Worker",
 	HandlerType: (*WorkerServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -205,20 +213,21 @@ var _Worker_serviceDesc = grpc.ServiceDesc{
 func init() { proto.RegisterFile("guid.proto", fileDescriptor0) }
 
 var fileDescriptor0 = []byte{
-	// 237 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x09, 0x6e, 0x88, 0x02, 0xff, 0x6c, 0x90, 0x31, 0x4f, 0xc3, 0x30,
-	0x10, 0x85, 0x49, 0x5a, 0x0a, 0x3d, 0xda, 0x0e, 0xc7, 0x52, 0x22, 0x86, 0xca, 0x53, 0x91, 0x90,
-	0x07, 0x58, 0x98, 0x2b, 0xa1, 0x2a, 0x5b, 0xe5, 0x85, 0xd9, 0xad, 0xad, 0xd4, 0x02, 0xc7, 0x26,
-	0x3e, 0x0b, 0x95, 0x5f, 0x8f, 0xe2, 0x10, 0x20, 0x12, 0xe3, 0xbd, 0x77, 0x4f, 0xef, 0xd3, 0x03,
-	0xa8, 0xa2, 0x51, 0xdc, 0x37, 0x8e, 0x1c, 0x8e, 0xad, 0x34, 0x35, 0x5b, 0xc0, 0xec, 0xd9, 0x7a,
-	0x3a, 0x09, 0xfd, 0x1e, 0x75, 0x20, 0x66, 0x61, 0x5e, 0xaa, 0x17, 0xd7, 0xbc, 0xea, 0x46, 0x68,
-	0xff, 0x76, 0xc2, 0x02, 0x2e, 0x3f, 0xd2, 0x59, 0xaa, 0x65, 0xb6, 0xca, 0xd6, 0x63, 0xf1, 0x73,
-	0x23, 0x83, 0x99, 0x92, 0x24, 0x0f, 0xba, 0xa6, 0xe4, 0xe7, 0xc9, 0x1f, 0x68, 0x78, 0x0b, 0x53,
-	0x32, 0x56, 0x07, 0x92, 0xd6, 0x2f, 0x47, 0xab, 0x6c, 0x3d, 0x12, 0xbf, 0x02, 0xbb, 0x81, 0x8b,
-	0x52, 0x75, 0x45, 0x0b, 0xc8, 0x4d, 0x5f, 0x91, 0x1b, 0xf5, 0xe0, 0x61, 0xd2, 0x71, 0xe0, 0x13,
-	0x5c, 0x6d, 0x35, 0xf5, 0x58, 0x88, 0xbc, 0x25, 0xe7, 0x7f, 0xb1, 0x8b, 0xeb, 0x4e, 0x1b, 0xa0,
-	0xb3, 0x33, 0xbc, 0x87, 0xf3, 0x94, 0xfc, 0x37, 0x33, 0xef, 0x33, 0xdf, 0xdf, 0x9b, 0x3b, 0x28,
-	0x0e, 0xce, 0xf2, 0xca, 0xd0, 0x31, 0xee, 0x79, 0x70, 0xc1, 0x7d, 0x1e, 0xa3, 0xac, 0x2b, 0xde,
-	0xae, 0xb6, 0x99, 0x6e, 0xa3, 0x51, 0xbb, 0x76, 0xba, 0x5d, 0xb6, 0x9f, 0xa4, 0x0d, 0x1f, 0xbf,
-	0x02, 0x00, 0x00, 0xff, 0xff, 0x4e, 0x0a, 0xa6, 0xf9, 0x51, 0x01, 0x00, 0x00,
+	// 244 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x09, 0x6e, 0x88, 0x02, 0xff, 0x5c, 0x90, 0xbf, 0x4e, 0xc3, 0x30,
+	0x10, 0x87, 0xc9, 0x1f, 0x52, 0x7a, 0x10, 0x06, 0x23, 0xa1, 0x12, 0x31, 0x14, 0x2f, 0x84, 0x25,
+	0x03, 0x7d, 0x83, 0x2e, 0x55, 0xb6, 0xca, 0x0b, 0x73, 0x52, 0x9b, 0xd4, 0x02, 0xc7, 0x21, 0x3e,
+	0x0b, 0xc1, 0xd3, 0xa3, 0x5c, 0x52, 0x50, 0xd8, 0xfc, 0xdd, 0x7d, 0xd6, 0xfd, 0xee, 0x00, 0x1a,
+	0xaf, 0x65, 0xd1, 0xf5, 0x16, 0x2d, 0x8b, 0x87, 0x37, 0x7f, 0x80, 0x85, 0x50, 0x1f, 0x5e, 0x39,
+	0x64, 0xb7, 0x90, 0xb4, 0xde, 0xd4, 0xaa, 0x5f, 0x05, 0xeb, 0x20, 0x4f, 0xc5, 0x44, 0xdc, 0x40,
+	0x5a, 0xca, 0x17, 0xdb, 0xbf, 0xa9, 0x5e, 0xa8, 0xee, 0xfd, 0x8b, 0x65, 0x70, 0xf1, 0x49, 0x58,
+	0x4a, 0x52, 0x63, 0xf1, 0xcb, 0x8c, 0xc3, 0x95, 0xac, 0xb0, 0x3a, 0xa8, 0x16, 0xa9, 0x1f, 0x52,
+	0x7f, 0x56, 0x63, 0xf7, 0xb0, 0x44, 0x6d, 0x94, 0xc3, 0xca, 0x74, 0xab, 0x68, 0x1d, 0xe4, 0x91,
+	0xf8, 0x2b, 0xf0, 0x3b, 0x58, 0x94, 0x72, 0x1c, 0x74, 0x0d, 0xa1, 0x1e, 0x46, 0x44, 0x79, 0x2c,
+	0x42, 0x2d, 0x9f, 0x5f, 0x21, 0x19, 0x73, 0xb0, 0x0d, 0x5c, 0xee, 0x14, 0x9e, 0x62, 0xb1, 0xb4,
+	0xa0, 0xc5, 0xa6, 0x4d, 0xb2, 0x9b, 0x11, 0x67, 0xa9, 0xf9, 0x19, 0x7b, 0x84, 0x73, 0xfa, 0xf4,
+	0x5f, 0x4f, 0x4f, 0xfa, 0x24, 0x6e, 0x9f, 0x20, 0x3b, 0x58, 0x53, 0x34, 0x1a, 0x8f, 0xbe, 0x2e,
+	0x9c, 0x75, 0xf6, 0xfb, 0xe8, 0xab, 0xb6, 0x21, 0x6f, 0xbb, 0xdc, 0x79, 0x2d, 0xf7, 0xc3, 0x0d,
+	0xf7, 0x41, 0x9d, 0xd0, 0x31, 0x37, 0x3f, 0x01, 0x00, 0x00, 0xff, 0xff, 0x2d, 0xbb, 0xe0, 0x2a,
+	0x5a, 0x01, 0x00, 0x00,
 }
