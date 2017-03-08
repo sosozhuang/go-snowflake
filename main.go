@@ -1,12 +1,12 @@
 package main
 
 import (
-	"context"
+	"golang.org/x/net/context"
 	"errors"
 	"flag"
 	"fmt"
 	"github.com/coreos/etcd/client"
-	pb "github.com/sosozhuang/guid/proto"
+	//pb "github.com/sosozhuang/guid/proto"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 	"log"
@@ -16,76 +16,64 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
-)
-
-const (
-	workerIdBits     uint64 = 5
-	datacenterIdBits uint64 = 5
-	maxWorkerId             = -1 ^ (-1 << workerIdBits)
-	maxDatacenterId         = -1 ^ (-1 << datacenterIdBits)
-	sequenceBits     uint64 = 12
-
-	workerIdShift            = sequenceBits
-	datacenterIdShift        = sequenceBits + workerIdBits
-	timestampLeftShift       = sequenceBits + workerIdBits + datacenterIdBits
-	sequenceMask             = -1 ^ (-1 << sequenceBits)
-	twepoch            int64 = 1288834974657
+	"path"
 )
 
 var (
-	serverPort       = flag.Int64("port", 7609, "server port")
-	workerId         = flag.Uint64("wid", 0, "worker id")
-	datacenterId     = flag.Uint64("dcid", 0, "data center id")
-	sequence         = flag.Uint64("sequence", 0, "sequence")
+	serverPort       = flag.Int("port", 7609, "server port")
+	workerId         = flag.Uint64("worker-id", 0, "worker id")
+	datacenterId     = flag.Uint64("datacenter-id", 0, "data center id")
+	sequence         = flag.Uint64("seq", 0, "sequence")
 	etcdEndpoints    = flag.String("etcd", "http://127.0.0.1:2379", "etcd emdpoints")
 	workerIdPath     = flag.String("path", "/snowflake-servers", "worker id path")
-	skipSanityChecks = flag.Bool("check", false, "skip sanity checks")
-	startupSleepMs   = flag.Int64("sleep", 10000, "startup sleep milliseconds")
+	skipSanityChecks = flag.Bool("skip-check", false, "skip sanity checks")
+	//startupSleepMs   = flag.Int64("sleep", 10000, "startup sleep milliseconds")
 )
 
 func main() {
 	flag.Parse()
 
+	c, err := etcdClient(*etcdEndpoints)
+	if err != nil {
+		log.Fatalln("Failed to create etcd client:", err)
+		return
+	}
 	if !*skipSanityChecks {
-		err := sanityCheckPeers()
+		err := sanityCheckPeers(c)
 		if err != nil {
 			log.Fatalln("Unexpected exception while checking peers:", err)
 			return
 		}
 	}
 
-	err := registerWorkerId(*workerId)
+	err = registerWorkerId(*workerId, c)
 	if err != nil {
 		log.Fatalln("Unexpected exception while registering worker id:", err)
 		return
 	}
-	go unRegisterWorkerId(*workerId)
+	defer unRegisterWorkerId(*workerId, c)
+	go signalListen(*workerId, c)
 
-	time.Sleep(time.Duration(*startupSleepMs) * time.Millisecond)
+	//time.Sleep(time.Duration(*startupSleepMs) * time.Millisecond)
 	iw, err := NewIdWorker(*workerId, *datacenterId, *sequence)
 	if err != nil {
-		log.Fatalln("Unexpected exception while initializing server:", err)
+		log.Println("Unexpected exception while initializing server:", err)
 		return
 	}
-	//fmt.Println(iw.NextId())
-	//fmt.Println(iw.NextId())
-	//time.Sleep(2 * time.Second)
-	//fmt.Println(iw.NextId())
 
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", *serverPort))
 	if err != nil {
-		log.Fatalf("Failed to listen: %v", err)
+		log.Printf("Failed to listen: %v", err)
 		return
 	}
 	s := grpc.NewServer()
-	pb.RegisterWorkerServer(s, iw)
+	RegisterWorkerServer(s, iw)
 	// Register reflection service on gRPC server.
 	reflection.Register(s)
 	if err := s.Serve(lis); err != nil {
-		log.Fatalf("Failed to serve: %v", err)
+		log.Printf("Failed to serve: %v", err)
 		return
 	}
 
@@ -93,7 +81,7 @@ func main() {
 
 type Peer struct {
 	Hostname string
-	Port     int64
+	Port     int
 }
 
 func getHostname() string {
@@ -101,44 +89,43 @@ func getHostname() string {
 	return hostname
 }
 
-func sanityCheckPeers() error {
+func sanityCheckPeers(c client.Client) error {
 	var timestampCount, peerCount int64 = 0, 0
-	//timestamps := int64(0)
-	peerMap, err := peers()
+	peerMap, err := peers(c)
 	if err != nil {
 		return err
 	}
 	for key, value := range peerMap {
 		id, err := strconv.ParseUint(key, 10, 64)
 		if err != nil {
-			log.Println("parse peerMap key faild:", err)
+			log.Println("Parse peerMap key faild:", err)
 			break
 		}
 
 		slice := strings.Split(value, ":")
 		if len(slice) != 2 {
-			log.Printf("peerMap key %s value %s length %d\n", key, value, len(slice))
+			log.Printf("PeerMap key %s value %s length %d\n", key, value, len(slice))
 			break
 		}
-		port, err := strconv.ParseInt(slice[1], 10, 64)
+		port, err := strconv.Atoi(slice[1])
 		if err != nil {
-			log.Println("parse peerMap value faild:", err)
+			log.Println("Parse peerMap value faild:", err)
 			break
 		}
 		peer := Peer{slice[0], port}
 
 		if peer.Hostname != getHostname() && peer.Port != *serverPort {
-			log.Printf("connecting to %s:%d\n", peer.Hostname, peer.Port)
+			log.Printf("Connecting to %s:%d\n", peer.Hostname, peer.Port)
 			conn, err := grpc.Dial(fmt.Sprintf("%s:%d", peer.Hostname, peer.Port), grpc.WithInsecure())
 			if err != nil {
-				log.Printf("did not connect: %v", err)
+				log.Printf("Did not connect: %v", err)
 				return err
 			}
-			c := pb.NewWorkerClient(conn)
+			c := NewWorkerClient(conn)
 			worker, err := c.GetIdWorker(context.Background(), nil)
 			if err != nil {
-				log.Fatalf("could not get worker: %v", err)
-				return
+				log.Fatalf("Could not get worker: %v", err)
+				return err
 			}
 			conn.Close()
 			reportedWorkerId := worker.GetWorkerId()
@@ -159,7 +146,7 @@ func sanityCheckPeers() error {
 	if peerCount > 0 {
 		avg := timestampCount / peerCount
 		now := timeUnixMillis()
-		if math.Abs(now-avg) > 1e4 {
+		if math.Abs(float64(now-avg)) > 1e4 {
 			log.Printf("Timestamp sanity check failed. Mean timestamp is %d, but mine is %d, "+
 				"so I'm more than 10s away from the mean\n", avg, now)
 			return errors.New("timestamp sanity check failed")
@@ -169,15 +156,15 @@ func sanityCheckPeers() error {
 	return nil
 }
 
-func peers() (map[string]string, error) {
+func etcdClient(etcdEndpoints string) (client.Client, error) {
 	cfg := client.Config{
-		Endpoints: []string{""},
+		Endpoints: strings.Split(etcdEndpoints, ","),
 		Transport: client.DefaultTransport,
 	}
-	c, err := client.New(cfg)
-	if err != nil {
-		return nil, err
-	}
+	return client.New(cfg)
+}
+
+func peers(c client.Client) (map[string]string, error) {
 	kapi := client.NewKeysAPI(c)
 	peerMap := make(map[string]string)
 	resp, err := kapi.Get(context.Background(), *workerIdPath, &client.GetOptions{Recursive: true})
@@ -185,7 +172,7 @@ func peers() (map[string]string, error) {
 		e, ok := err.(client.Error)
 		if ok {
 			if e.Code == client.ErrorCodeKeyNotFound {
-				log.Printf("%s missing, trying to create it\n", *workerIdPath)
+				log.Printf("Key %s missing, trying to create it\n", *workerIdPath)
 				_, err = kapi.Set(context.Background(), *workerIdPath, "", &client.SetOptions{Dir: true})
 				return peerMap, err
 			}
@@ -194,27 +181,20 @@ func peers() (map[string]string, error) {
 	}
 
 	for _, child := range resp.Node.Nodes {
-		peerMap[child.Key] = child.Value
+		_, key := path.Split(child.Key)
+		peerMap[key] = child.Value
 	}
 
-	log.Printf("found %d children\n", len(resp.Node.Nodes))
+	log.Printf("Found %d children\n", len(resp.Node.Nodes))
 	return peerMap, nil
 }
 
-func registerWorkerId(workerId uint64) error {
-	log.Printf("trying to claim workerId %d\n", workerId)
+func registerWorkerId(workerId uint64, c client.Client) error {
+	log.Printf("Trying to claim workerId %d\n", workerId)
 	tries := 0
 	for {
-		cfg := client.Config{
-			Endpoints: []string{""},
-			Transport: client.DefaultTransport,
-		}
-		c, err := client.New(cfg)
-		if err != nil {
-			return err
-		}
 		kapi := client.NewKeysAPI(c)
-		_, err = kapi.Create(context.Background(), fmt.Sprintf("%s/%d", *workerIdPath, workerId), fmt.Sprintf("%s:%d", getHostname(), *serverPort))
+		_, err := kapi.Create(context.Background(), fmt.Sprintf("%s/%d", *workerIdPath, workerId), fmt.Sprintf("%s:%d", getHostname(), *serverPort))
 		if err != nil {
 			if tries < 2 {
 				log.Printf("Failed to claim worker id. Gonna wait a bit and retry because the node may be from the last time I was running.")
@@ -232,31 +212,19 @@ func registerWorkerId(workerId uint64) error {
 	return nil
 }
 
-func unRegisterWorkerId(workerId uint64) {
-	c := make(chan os.Signal)
-	signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(c)
-	<-c
+func unRegisterWorkerId(workerId uint64, c client.Client) {
 	log.Printf("trying to declaim workerId %d\n", workerId)
 	tries := 0
 	for {
-		cfg := client.Config{
-			Endpoints: []string{""},
-			Transport: client.DefaultTransport,
-		}
-		c, err := client.New(cfg)
-		if err != nil {
-			return err
-		}
 		kapi := client.NewKeysAPI(c)
-		_, err = kapi.Delete(context.Background(), fmt.Sprintf("%s/%d", *workerIdPath, workerId), nil)
+		_, err := kapi.Delete(context.Background(), fmt.Sprintf("%s/%d", *workerIdPath, workerId), nil)
 		if err != nil {
 			if tries < 2 {
 				log.Printf("Failed to declaim worker id. Gonna wait a bit and retry because the node may be from the last time I was running.")
 				tries += 1
 				time.Sleep(1000)
 			} else {
-				return err
+				return
 			}
 		} else {
 			break
@@ -264,84 +232,14 @@ func unRegisterWorkerId(workerId uint64) {
 
 	}
 	log.Printf("Successfully declaimed workerId %d", workerId)
+}
+
+func signalListen(workerId uint64, c client.Client) {
+	ch := make(chan os.Signal)
+	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(ch)
+	<-ch
+	log.Printf("trying to declaim workerId %d\n", workerId)
+	unRegisterWorkerId(workerId, c)
 	os.Exit(0)
-}
-
-type IdWorker struct {
-	workerId      uint64
-	datacenterId  uint64
-	sequence      uint64
-	lastTimestamp int64
-	m             sync.Mutex
-}
-
-func (iw *IdWorker) GetIdWorker(context.Context, *pb.EmptyRequest) (*pb.IdWorker, error) {
-	return &pb.IdWorker{
-		WorkerId:     iw.workerId,
-		DatacenterId: iw.datacenterId,
-		Timestamp:    timeUnixMillis(),
-	}, nil
-}
-
-//func (iw *IdWorker) GetWorkerId() uint64 {
-//	return iw.workerId
-//}
-//
-//func (iw *IdWorker) GetDatacenterId() uint64 {
-//	return iw.datacenterId
-//}
-
-func (iw *IdWorker) NextId() (uint64, error) {
-	iw.m.Lock()
-	defer iw.m.Unlock()
-	timestamp := timeUnixMillis()
-	if timestamp < iw.lastTimestamp {
-		log.Printf("clock is moving backwards. Rejecting requests until %d.\n", iw.lastTimestamp)
-		return 0, fmt.Errorf("Clock moved backwards. Refusing to generate id for %d milliseconds",
-			iw.lastTimestamp-timestamp)
-	}
-	if iw.lastTimestamp == timestamp {
-		iw.sequence = (iw.sequence + 1) & sequenceMask
-		if iw.sequence == 0 {
-			timestamp = tilNextMillis(iw.lastTimestamp)
-		}
-	} else {
-		iw.sequence = 0
-	}
-	iw.lastTimestamp = timestamp
-	return (uint64(timestamp-twepoch) << timestampLeftShift) |
-		(iw.datacenterId << datacenterIdShift) |
-		(iw.workerId << workerIdShift) |
-		iw.sequence, nil
-}
-
-func tilNextMillis(lastTimestamp int64) int64 {
-	timestamp := timeUnixMillis()
-	for timestamp <= lastTimestamp {
-		timestamp = timeUnixMillis()
-	}
-	return timestamp
-}
-
-func timeUnixMillis() int64 {
-	return time.Now().UnixNano() / 1e6
-}
-
-func NewIdWorker(workerId, datacenterId, sequence uint64) (*IdWorker, error) {
-	if workerId > maxWorkerId || workerId < 0 {
-		return nil, fmt.Errorf("worker Id can't be greater than %d or less than 0", maxWorkerId)
-	}
-	if datacenterId > maxDatacenterId || datacenterId < 0 {
-		return nil, fmt.Errorf("datacenter Id can't be greater than %d or less than 0", maxDatacenterId)
-	}
-
-	log.Printf("Worker starting. timestamp left shift %d, datacenter id bits %d, worker id bits %d, sequence bits %d, workerid %d\n",
-		timestampLeftShift, datacenterIdBits, workerIdBits, sequenceBits, workerId)
-	iw := &IdWorker{
-		workerId:      workerId,
-		datacenterId:  datacenterId,
-		sequence:      sequence,
-		lastTimestamp: -1,
-	}
-	return iw, nil
 }

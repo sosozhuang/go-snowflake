@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "com.github.sosozhuang.guid";
+option java_outer_classname = "GuidProto";
+
+package main;
+
+service Worker {
+  rpc GetIdWorker(EmptyRequest) returns (IdWorkerReply) {}
+  rpc GetId(EmptyRequest) returns(IdReply) {}
+}
+
+message EmptyRequest {
+
+}
+
+message IdWorkerReply {
+  uint64 workerId = 1;
+  uint64 datacenterId = 2;
+  int64 timestamp = 3;
+}
+
+message IdReply {
+  uint64 id = 1;
+}
