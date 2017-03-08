@@ -3,7 +3,7 @@ guid: based on [snowflake](https://github.com/twitter/snowflake), guid is writte
 
 
 ## Usage of guid:
-as network service
+* Run as network service
 ```shell
   -datacenter-id uint
     	data center id
@@ -22,7 +22,7 @@ as network service
   -worker-id uint
     	worker id
 ```
-connect to remote service
+* Connect to remote service
 ```go
 	//connect to grpc server
 	conn, err := grpc.Dial(fmt.Sprintf("%s:%d", "localhost", 7609), grpc.WithInsecure())
@@ -41,7 +41,7 @@ connect to remote service
 	}
 	log.Printf("Fetch Ids %v\n", reply.Id)
 ```
-local call
+* Local call
 ```go
 	var workerId, datacenterId, sequence uint64 = 0, 1, 2
 	idWorker, err := guid.NewIdWorker(workerId, datacenterId, sequence)

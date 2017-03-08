@@ -6,7 +6,6 @@ import (
 	"log"
 	"sync"
 	"golang.org/x/net/context"
-	//pb "github.com/sosozhuang/guid/proto"
 	"errors"
 )
 
