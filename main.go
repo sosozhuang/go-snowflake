@@ -6,13 +6,19 @@ import (
 	"flag"
 	"fmt"
 	"github.com/coreos/etcd/client"
+	pb "github.com/sosozhuang/guid/proto"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 	"log"
 	"math"
+	"net"
+	"os"
+	"os/signal"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
-	"os"
 )
 
 const (
@@ -34,6 +40,7 @@ var (
 	workerId         = flag.Uint64("wid", 0, "worker id")
 	datacenterId     = flag.Uint64("dcid", 0, "data center id")
 	sequence         = flag.Uint64("sequence", 0, "sequence")
+	etcdEndpoints    = flag.String("etcd", "http://127.0.0.1:2379", "etcd emdpoints")
 	workerIdPath     = flag.String("path", "/snowflake-servers", "worker id path")
 	skipSanityChecks = flag.Bool("check", false, "skip sanity checks")
 	startupSleepMs   = flag.Int64("sleep", 10000, "startup sleep milliseconds")
@@ -45,27 +52,43 @@ func main() {
 	if !*skipSanityChecks {
 		err := sanityCheckPeers()
 		if err != nil {
-			log.Fatalln(err)
+			log.Fatalln("Unexpected exception while checking peers:", err)
 			return
 		}
 	}
 
 	err := registerWorkerId(*workerId)
 	if err != nil {
-		log.Fatalln(err)
+		log.Fatalln("Unexpected exception while registering worker id:", err)
 		return
 	}
+	go unRegisterWorkerId(*workerId)
 
 	time.Sleep(time.Duration(*startupSleepMs) * time.Millisecond)
 	iw, err := NewIdWorker(*workerId, *datacenterId, *sequence)
 	if err != nil {
-		log.Fatalf("Unexpected exception while initializing server: %s\n", err)
+		log.Fatalln("Unexpected exception while initializing server:", err)
 		return
 	}
-	fmt.Println(iw.NextId())
-	fmt.Println(iw.NextId())
-	time.Sleep(2 * time.Second)
-	fmt.Println(iw.NextId())
+	//fmt.Println(iw.NextId())
+	//fmt.Println(iw.NextId())
+	//time.Sleep(2 * time.Second)
+	//fmt.Println(iw.NextId())
+
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", *serverPort))
+	if err != nil {
+		log.Fatalf("Failed to listen: %v", err)
+		return
+	}
+	s := grpc.NewServer()
+	pb.RegisterWorkerServer(s, iw)
+	// Register reflection service on gRPC server.
+	reflection.Register(s)
+	if err := s.Serve(lis); err != nil {
+		log.Fatalf("Failed to serve: %v", err)
+		return
+	}
+
 }
 
 type Peer struct {
@@ -79,8 +102,8 @@ func getHostname() string {
 }
 
 func sanityCheckPeers() error {
-	peerCount := 0
-	timestamps := int64(0)
+	var timestampCount, peerCount int64 = 0, 0
+	//timestamps := int64(0)
 	peerMap, err := peers()
 	if err != nil {
 		return err
@@ -106,7 +129,18 @@ func sanityCheckPeers() error {
 
 		if peer.Hostname != getHostname() && peer.Port != *serverPort {
 			log.Printf("connecting to %s:%d\n", peer.Hostname, peer.Port)
-			worker := IdWorker{}
+			conn, err := grpc.Dial(fmt.Sprintf("%s:%d", peer.Hostname, peer.Port), grpc.WithInsecure())
+			if err != nil {
+				log.Printf("did not connect: %v", err)
+				return err
+			}
+			c := pb.NewWorkerClient(conn)
+			worker, err := c.GetIdWorker(context.Background(), nil)
+			if err != nil {
+				log.Fatalf("could not get worker: %v", err)
+				return
+			}
+			conn.Close()
 			reportedWorkerId := worker.GetWorkerId()
 			if reportedWorkerId != id {
 				log.Printf("Worker at %s:%d has id %d in zookeeper, but via rpc it says %d", peer.Hostname, peer.Port, id, reportedWorkerId)
@@ -119,11 +153,11 @@ func sanityCheckPeers() error {
 				return errors.New("datacenter id insanity")
 			}
 			peerCount += 1
-			timestamps += worker.timeUnixMillis()
+			timestampCount += worker.GetTimestamp()
 		}
 	}
 	if peerCount > 0 {
-		avg := timestamps / peerCount
+		avg := timestampCount / peerCount
 		now := timeUnixMillis()
 		if math.Abs(now-avg) > 1e4 {
 			log.Printf("Timestamp sanity check failed. Mean timestamp is %d, but mine is %d, "+
@@ -148,12 +182,15 @@ func peers() (map[string]string, error) {
 	peerMap := make(map[string]string)
 	resp, err := kapi.Get(context.Background(), *workerIdPath, &client.GetOptions{Recursive: true})
 	if err != nil {
-		if err == client.ErrorCodeKeyNotFound {
-			log.Printf("%s missing, trying to create it\n", *workerIdPath)
-			kapi.Set(context.Background(), *workerIdPath, "", &client.SetOptions{Dir: true})
-			err = nil
+		e, ok := err.(client.Error)
+		if ok {
+			if e.Code == client.ErrorCodeKeyNotFound {
+				log.Printf("%s missing, trying to create it\n", *workerIdPath)
+				_, err = kapi.Set(context.Background(), *workerIdPath, "", &client.SetOptions{Dir: true})
+				return peerMap, err
+			}
 		}
-		return peerMap, err
+		return nil, err
 	}
 
 	for _, child := range resp.Node.Nodes {
@@ -174,7 +211,7 @@ func registerWorkerId(workerId uint64) error {
 		}
 		c, err := client.New(cfg)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		kapi := client.NewKeysAPI(c)
 		_, err = kapi.Create(context.Background(), fmt.Sprintf("%s/%d", *workerIdPath, workerId), fmt.Sprintf("%s:%d", getHostname(), *serverPort))
@@ -195,6 +232,41 @@ func registerWorkerId(workerId uint64) error {
 	return nil
 }
 
+func unRegisterWorkerId(workerId uint64) {
+	c := make(chan os.Signal)
+	signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(c)
+	<-c
+	log.Printf("trying to declaim workerId %d\n", workerId)
+	tries := 0
+	for {
+		cfg := client.Config{
+			Endpoints: []string{""},
+			Transport: client.DefaultTransport,
+		}
+		c, err := client.New(cfg)
+		if err != nil {
+			return err
+		}
+		kapi := client.NewKeysAPI(c)
+		_, err = kapi.Delete(context.Background(), fmt.Sprintf("%s/%d", *workerIdPath, workerId), nil)
+		if err != nil {
+			if tries < 2 {
+				log.Printf("Failed to declaim worker id. Gonna wait a bit and retry because the node may be from the last time I was running.")
+				tries += 1
+				time.Sleep(1000)
+			} else {
+				return err
+			}
+		} else {
+			break
+		}
+
+	}
+	log.Printf("Successfully declaimed workerId %d", workerId)
+	os.Exit(0)
+}
+
 type IdWorker struct {
 	workerId      uint64
 	datacenterId  uint64
@@ -203,13 +275,21 @@ type IdWorker struct {
 	m             sync.Mutex
 }
 
-func (iw *IdWorker) GetWorkerId() uint64 {
-	return iw.workerId
+func (iw *IdWorker) GetIdWorker(context.Context, *pb.EmptyRequest) (*pb.IdWorker, error) {
+	return &pb.IdWorker{
+		WorkerId:     iw.workerId,
+		DatacenterId: iw.datacenterId,
+		Timestamp:    timeUnixMillis(),
+	}, nil
 }
 
-func (iw *IdWorker) GetDatacenterId() uint64 {
-	return iw.datacenterId
-}
+//func (iw *IdWorker) GetWorkerId() uint64 {
+//	return iw.workerId
+//}
+//
+//func (iw *IdWorker) GetDatacenterId() uint64 {
+//	return iw.datacenterId
+//}
 
 func (iw *IdWorker) NextId() (uint64, error) {
 	iw.m.Lock()
@@ -243,7 +323,7 @@ func tilNextMillis(lastTimestamp int64) int64 {
 	return timestamp
 }
 
-func (*IdWorker) timeUnixMillis() int64 {
+func timeUnixMillis() int64 {
 	return time.Now().UnixNano() / 1e6
 }
 
