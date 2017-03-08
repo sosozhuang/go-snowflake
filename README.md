@@ -2,7 +2,8 @@
 guid: based on [snowflake](https://github.com/twitter/snowflake), guid is written in golang. Call local function `guid.NewIdWorker`, will get an id worker. In addition, making generate id as a network service, a client can connect with [grpc](https://github.com/grpc/grpc-go). Servers information are stored in [etcd](https://github.com/coreos/etcd)
 
 
-## Usage of guid service:
+## Usage of guid:
+as network service
 ```shell
   -datacenter-id uint
     	data center id
@@ -21,7 +22,7 @@ guid: based on [snowflake](https://github.com/twitter/snowflake), guid is writte
   -worker-id uint
     	worker id
 ```
-## connect to remote service
+connect to remote service
 ```go
 	//connect to grpc server
 	conn, err := grpc.Dial(fmt.Sprintf("%s:%d", "localhost", 7609), grpc.WithInsecure())
@@ -40,7 +41,7 @@ guid: based on [snowflake](https://github.com/twitter/snowflake), guid is writte
 	}
 	log.Printf("Fetch Ids %v\n", reply.Id)
 ```
-## local call
+local call
 ```go
 	var workerId, datacenterId, sequence uint64 = 0, 1, 2
 	idWorker, err := guid.NewIdWorker(workerId, datacenterId, sequence)
